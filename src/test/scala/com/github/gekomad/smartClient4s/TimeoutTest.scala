@@ -23,7 +23,7 @@ class TimeoutTest extends CatsEffectSuite {
 
   test("timeout test") {
     for {
-      client <- HttpClientProvider.httpClientsResource("client1", proxy = None)
+      client <- HttpClientProvider.httpClientsResource(proxy = None)
       (body, status, _) <- client.call[Unit, Json](
         UriAndOpt(uri"http://127.0.0.1:9111/api/delay/3", basicToken = Some(BasicToken.apply("admin", "pass123"))),
         GET,
@@ -37,7 +37,7 @@ class TimeoutTest extends CatsEffectSuite {
 
   test("timeout2 test") {
     for {
-      client <- HttpClientProvider.httpClientsResource("client1", proxy = None)
+      client <- HttpClientProvider.httpClientsResource(proxy = None)
       (_, status, _) <- client.call[Unit, Json](
         UriAndOpt(uri"http://127.0.0.1:9111/api/delay/3", basicToken = Some(BasicToken.apply("admin", "pass123"))),
         GET,

@@ -14,7 +14,7 @@ class CaffeineTest extends CatsEffectSuite {
 
   test("CatsCaffeine invalidate") {
 
-    val cache = CatsCaffeine[Int, String]("test", maximumSize = None, defaultTTL = Some(1.hour))
+    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 1.hour)
     for {
       _ <- cache.upSert(1, "foo")
       a <- cache.get(1)
@@ -25,7 +25,7 @@ class CaffeineTest extends CatsEffectSuite {
     } yield ()
   }
   test("CatsCaffeine delete") {
-    val cache = CatsCaffeine[Int, String]("test", maximumSize = None, defaultTTL = Some(1.hour))
+    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 1.hour)
     for {
       _ <- cache.upSert(1, "foo")
       a <- cache.get(1)
@@ -37,7 +37,7 @@ class CaffeineTest extends CatsEffectSuite {
   }
 
   test("CatsCaffeine test1") {
-    val cache = CatsCaffeine[Int, String]("test", maximumSize = None, defaultTTL = Some(400.millis))
+    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 400.millis)
 
     for {
       _ <- cache.upSert(1, "baz")
@@ -51,7 +51,7 @@ class CaffeineTest extends CatsEffectSuite {
   }
 
   test("CatsCaffeine test") {
-    val cache = CatsCaffeine[Int, String]("test", maximumSize = None, defaultTTL = Some(400.millis))
+    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 400.millis)
 
     for {
       _ <- cache.upSert(1, "baz")
@@ -65,7 +65,7 @@ class CaffeineTest extends CatsEffectSuite {
   }
 
   test("CatsCaffeine test Map") {
-    val cache = CatsCaffeine[Int, String]("test")
+    val cache = CatsCaffeine[Int, String]()
     for {
       _ <- cache.upSert(Map(1 -> "baz", 2 -> "foo"))
       a <- cache.get(1)
@@ -79,7 +79,7 @@ class CaffeineTest extends CatsEffectSuite {
   }
 
   test("CatsCaffeine test GC") {
-    val cache = CatsCaffeine[String, List[Int]]("test", maximumSize = None, defaultTTL = Some(800.millis))
+    val cache = CatsCaffeine[String, List[Int]](maximumSize = None, defaultTTL = 800.millis)
 
     for {
       _  <- cache.upSert("a", List(1))
@@ -97,7 +97,7 @@ class CaffeineTest extends CatsEffectSuite {
   }
 
   test("CatsCaffeine test max size") {
-    val cache = CatsCaffeine[Int, String]("test", maximumSize = Some(1), defaultTTL = None)
+    val cache = CatsCaffeine[Int, String](maximumSize = Some(1))
 
     for {
       _  <- cache.upSert(1, "foo")

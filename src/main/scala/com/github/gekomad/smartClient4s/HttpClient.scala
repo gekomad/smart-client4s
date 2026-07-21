@@ -49,26 +49,23 @@ object HttpClientProvider {
   private given LoggerFactory[IO]                   = Slf4jFactory.create[IO]
   private val logger: SelfAwareStructuredLogger[IO] = LoggerFactory[IO].getLogger
 
-  def httpClientsResource(
-    name: String,
-    proxy: Option[ProxyUriPort]
-  )(implicit propertiesSmartClient4s: PropertiesSmartClient4s): IO[Http4sClient] = {
+  def httpClientsResource(proxy: Option[ProxyUriPort], name: Option[String] = None)(implicit
+    propertiesSmartClient4s: PropertiesSmartClient4s
+  ): IO[Http4sClient] = {
     val c = httpClients(None).flatMap { httpClientLog =>
       httpClients(proxy).map { httpClient =>
-        val logClient = Http4sClient(s"$name-logClient", httpClientLog, None)
+        val logClient = Http4sClient(name.map(a => s"$a-logClient"), httpClientLog, None)
         Http4sClient(name, httpClient, Some(logClient))
       }
     }
     logger.debug("httpClientsResource") *> c
   }
-  private def httpClients(
-    useProxy: Option[ProxyUriPort]
-  )(implicit propertiesSmartClient4s: PropertiesSmartClient4s): IO[Client[IO]] = {
+  private def httpClients(useProxy: Option[ProxyUriPort])(implicit propertiesSmartClient4s: PropertiesSmartClient4s): IO[Client[IO]] = {
     import scala.jdk.DurationConverters.*
     val baseClient = HttpClient
       .newBuilder()
       .version(HttpClient.Version.HTTP_2)
-      .connectTimeout(propertiesSmartClient4s.httpClientHandShakeTimeout.toJava)
+      .connectTimeout(propertiesSmartClient4s.httpClientConf.handShakeTimeout.toJava)
     useProxy match {
       case Some(ProxyUriPort(host, port)) =>
         IO(baseClient.proxy(ProxySelector.of(new InetSocketAddress(host.toString, port.value))).build()).map(JdkHttpClient(_))
@@ -78,7 +75,7 @@ object HttpClientProvider {
 }
 case class PayloadError(uri: String, error: String = "Payload is not a Json", description: String)
 case class Http4sClient(
-  name: String,
+  name: Option[String],
   client: Client[IO],
   private val logClient: Option[Http4sClient]
 )(implicit propertiesSmartClient4s: PropertiesSmartClient4s) {
@@ -87,18 +84,17 @@ case class Http4sClient(
   private implicit val logger: PloggerIO = PloggerIO(this.getClass)
 
   val cache: Option[CatsCaffeineTrait[String, (String, Status)]] =
-    if (propertiesSmartClient4s.cacheDisabled) None
-    else Some(CatsCaffeine[String, (String, Status)](name, propertiesSmartClient4s.defaultCacheTTL, propertiesSmartClient4s.maximumCacheSize))
-  def statistics: IO[(String, Long)]    = cache.map(_.estimatedSize).sequence.map(a => (name, a.getOrElse(0)))
-  def estimatedSize: IO[Option[Long]]   = cache.map(_.estimatedSize).sequence
-  def invalidateCache: IO[Option[Unit]] = cache.map(_.invalidate).sequence
-  def cacheCleanUp: IO[Option[Unit]]    = cache.map(_.clean).sequence
+    propertiesSmartClient4s.cacheConf.map(cache => CatsCaffeine[String, (String, Status)](name, cache.defaultTTL, cache.maxSize))
+  def statistics: IO[(Option[String], Long)] = cache.map(_.estimatedSize).sequence.map(a => (name, a.getOrElse(0)))
+  def estimatedSize: IO[Option[Long]]        = cache.map(_.estimatedSize).sequence
+  def invalidateCache: IO[Option[Unit]]      = cache.map(_.invalidate).sequence
+  def cacheCleanUp: IO[Option[Unit]]         = cache.map(_.clean).sequence
 
   private def sendLogIfEnabled(
     f: FEcontext => IO[Option[Status]]
   )(implicit feContext: Option[FEcontext]): IO[Option[Status]] =
     feContext match {
-      case Some(feCtx) if feCtx.logEnable && propertiesSmartClient4s.logData.isDefined => f(feCtx)
+      case Some(feCtx) if feCtx.logEnable && propertiesSmartClient4s.logConf.isDefined => f(feCtx)
       case _                                                                           => IO(None)
     }
 
@@ -184,9 +180,9 @@ case class Http4sClient(
     api: Option[String],
     idx: Option[List[String]],
     info: Option[String]
-  ): IO[Option[Status]] = propertiesSmartClient4s.logData match {
+  ): IO[Option[Status]] = propertiesSmartClient4s.logConf match {
     case None => IO(None)
-    case Some(LogData(kafkaLogUri, domain, _, maxPayloadSize)) =>
+    case Some(LogConf(kafkaLogUri, domain, _, maxPayloadSize)) =>
       given Retry             = Retry(2, 1.second)
       given Option[FEcontext] = Some(feContext)
 
@@ -220,7 +216,7 @@ case class Http4sClient(
             Some(httpCall.asJson.spaces2),
             None,
             None,
-            timeout = propertiesSmartClient4s.httpClientHandShakeTimeout,
+            timeout = propertiesSmartClient4s.httpClientConf.handShakeTimeout,
             applicationJsonCT
           )
           _ <- logger.debug(s"sendToLog $aa")
@@ -368,7 +364,7 @@ case class Http4sClient(
     cookies: Option[RequestCookie] = None,
     multipart: Option[String] = None,
     ttlCache: Option[FiniteDuration] = None,
-    timeout: FiniteDuration = propertiesSmartClient4s.httpClientTimeout,
+    timeout: FiniteDuration = propertiesSmartClient4s.httpClientConf.timeout,
     noLog: Boolean = false
   )(implicit
     retry: Retry,

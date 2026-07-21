@@ -1,6 +1,6 @@
 package com.github.gekomad.smartClient4s.model
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.{DurationInt, FiniteDuration, NANOSECONDS}
 import com.comcast.ip4s.Port
 import org.http4s.{Header, Status, Uri}
 
@@ -21,7 +21,9 @@ val statusOK: List[Status] = List(
 )
 
 case class ProxyUriPort(uri: Uri, port: Port)
-case class LogData(kafkaLogUri: UriAndOpt, domain: String, sendToLogTimeout: FiniteDuration = 7.seconds, maxPayloadSize: Int = 200 * 1024)
+case class LogConf(kafkaLogUri: UriAndOpt, domain: String, sendToLogTimeout: FiniteDuration = 7.seconds, maxPayloadSize: Int = 200 * 1024)
+case class HttpClientConf(timeout: FiniteDuration, handShakeTimeout: FiniteDuration = 5.seconds)
+case class CacheConf(maxSize: Option[Long], defaultTTL: FiniteDuration = FiniteDuration(Long.MaxValue, NANOSECONDS))
 case class BasicToken(value: String)
 object BasicToken {
   private def generateBasicToken(user: String, pass: String): String =
@@ -46,13 +48,11 @@ object UriAndOpt {
   def apply(uri: Uri): UriAndOpt = UriAndOpt(uri = uri, basicToken = None, headerFields = None)
 }
 case class PropertiesSmartClient4s(
-  httpClientTimeout: FiniteDuration,
-  defaultCacheTTL: Option[FiniteDuration],
-  maximumCacheSize: Option[Long],
-  logData: Option[LogData],
-  cacheDisabled: Boolean,
-  httpClientHandShakeTimeout: FiniteDuration = 5.seconds
+  httpClientConf: HttpClientConf,
+  logConf: Option[LogConf],
+  cacheConf: Option[CacheConf]
 )
+
 enum LogDirection(val direction: String) {
   case in    extends LogDirection("in")
   case out   extends LogDirection("out")

@@ -21,7 +21,7 @@ class InvalidateTest extends CatsEffectSuite {
   private given Retry                   = Retry(1, 1.second)
 
   test("Invalidate cache") {
-    HttpClientProvider.httpClientsResource("client1", proxy = None).flatMap { client =>
+    HttpClientProvider.httpClientsResource(proxy = None).flatMap { client =>
       for {
         // 1. First call: Not in cache
         (tempoNoCache, (payload, status, fromCache)) <- client
