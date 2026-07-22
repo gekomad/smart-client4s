@@ -54,25 +54,38 @@ object HttpClientProvider {
   ): IO[Http4sClient] = {
     val c = httpClients(None).flatMap { httpClientLog =>
       httpClients(proxy).map { httpClient =>
-        val logClient = Http4sClient(name.map(a => s"$a-logClient"), httpClientLog, None)
+        val logClient = Http4sClient(name = name.map(a => s"$a-logClient"), client = httpClientLog, logClient = None)
         Http4sClient(name, httpClient, Some(logClient))
       }
     }
     logger.debug("httpClientsResource") *> c
   }
+
   private def httpClients(useProxy: Option[ProxyUriPort])(implicit propertiesSmartClient4s: PropertiesSmartClient4s): IO[Client[IO]] = {
     import scala.jdk.DurationConverters.*
     val baseClient = HttpClient
       .newBuilder()
       .version(HttpClient.Version.HTTP_2)
       .connectTimeout(propertiesSmartClient4s.httpClientConf.handShakeTimeout.toJava)
-    useProxy match {
-      case Some(ProxyUriPort(host, port)) =>
-        IO(baseClient.proxy(ProxySelector.of(new InetSocketAddress(host.toString, port.value))).build()).map(JdkHttpClient(_))
-      case None => IO(baseClient.build()).map(JdkHttpClient(_))
+
+    val cl = useProxy match {
+      case Some(ProxyUriPort(host, port, proxyUser, proxyPass)) =>
+        val c = baseClient.proxy(ProxySelector.of(new InetSocketAddress(host.toString, port.value)))
+        proxyUser match {
+          case Some(user) =>
+            val pass = proxyPass.filter(_.nonEmpty).fold(Array.emptyCharArray)(_.toCharArray)
+            c.authenticator(new java.net.Authenticator {
+              override def getPasswordAuthentication: java.net.PasswordAuthentication =
+                new java.net.PasswordAuthentication(user, pass)
+            })
+          case None => c
+        }
+      case None => baseClient
     }
+    IO(JdkHttpClient[IO](cl.build()))
   }
 }
+
 case class PayloadError(uri: String, error: String = "Payload is not a Json", description: String)
 case class Http4sClient(
   name: Option[String],

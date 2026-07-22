@@ -20,7 +20,7 @@ val statusOK: List[Status] = List(
   Status.ResetContent
 )
 
-case class ProxyUriPort(uri: Uri, port: Port)
+case class ProxyUriPort(uri: Uri, port: Port, user: Option[String], pass: Option[String])
 case class LogConf(kafkaLogUri: UriAndOpt, domain: String, sendToLogTimeout: FiniteDuration = 7.seconds, maxPayloadSize: Int = 200 * 1024)
 case class HttpClientConf(timeout: FiniteDuration, handShakeTimeout: FiniteDuration = 5.seconds)
 case class CacheConf(maxSize: Option[Long], defaultTTL: FiniteDuration = FiniteDuration(Long.MaxValue, NANOSECONDS))
