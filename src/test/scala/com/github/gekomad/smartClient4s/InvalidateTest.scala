@@ -24,31 +24,47 @@ class InvalidateTest extends CatsEffectSuite {
     HttpClientProvider.httpClientsResource(proxy = None).flatMap { client =>
       for {
         // 1. First call: Not in cache
-        (tempoNoCache, (payload, status, fromCache)) <- client
-          .call[Json, Json](TestHelper.fetchDataUrl, POST, body = Some(TestHelper.fetchDataPayload("key_cached")), ttlCache = Some(2.hours))
-          .timed
+        (payload, status, fromCache, sha1, tempoNoCache) <- client
+          .callWithInfo[Json, Json](
+            TestHelper.fetchDataUrl,
+            POST,
+            body = Some(TestHelper.fetchDataPayload("key_cached")),
+            ttlCache = Some(2.hours)
+          )
         _ = assert(payload.as[MyData].isRight)
         _ = assert(status.isSuccess)
+        _ = assert(sha1.isDefined)
         _ = assert(!fromCache)
         // 2. Second call: Uses the cache
-        (tempoCache, (payload, status, fromCache)) <- client
-          .call[Json, Json](TestHelper.fetchDataUrl, POST, body = Some(TestHelper.fetchDataPayload("key_cached")), ttlCache = Some(2.hours))
-          .timed
+        (payload, status, fromCache, sha2, tempoCache) <- client
+          .callWithInfo[Json, Json](
+            TestHelper.fetchDataUrl,
+            POST,
+            body = Some(TestHelper.fetchDataPayload("key_cached")),
+            ttlCache = Some(2.hours)
+          )
+
         _ = assert(payload.as[MyData].isRight)
         _ = assert(status.isSuccess)
         _ = assert(fromCache)
+        _ = assert(sha1 == sha2)
 
         // 3. Invalidate the cache
-        _ <- TestHelper.invalidateCC("key_cached")(using client, None)
+        _ <- client.invalidate(sha1.getOrElse(???))(using None)
 
         // 4. Third call: Empty cache, must execute the real call
-        (afterInvalidate, (payload, status, fromCache)) <- client
-          .call[Json, Json](TestHelper.fetchDataUrl, POST, body = Some(TestHelper.fetchDataPayload("key_cached")), ttlCache = Some(2.hours))
-          .timed
+        (payload, status, fromCache, sha3, afterInvalidate) <- client
+          .callWithInfo[Json, Json](
+            TestHelper.fetchDataUrl,
+            POST,
+            body = Some(TestHelper.fetchDataPayload("key_cached")),
+            ttlCache = Some(2.hours)
+          )
+
         _ = assert(payload.as[MyData].isRight)
         _ = assert(status.isSuccess)
         _ = assert(!fromCache)
-
+        _ = assert(sha1 == sha3)
         _ = assert(tempoNoCache >= 2.seconds, s"Expected >= 2s")
         _ = assert(tempoCache < 2.seconds, s"Expected < 2s")
         _ = assert(afterInvalidate >= 2.seconds, s"Expected >= 2s after invalidate")

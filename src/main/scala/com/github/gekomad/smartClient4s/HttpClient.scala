@@ -2,6 +2,7 @@ package com.github.gekomad.smartClient4s
 
 import cats.effect.*
 import cats.implicits.*
+import com.github.gekomad.smartClient4s.HttpClientProvider.HashKey
 import com.github.gekomad.smartClient4s.HttpHeader.{CIcontentType, applicationJsonCT, textPlainCT}
 import com.github.gekomad.smartClient4s.cache.caffeine.{CatsCaffeine, CatsCaffeineTrait}
 import com.github.gekomad.smartClient4s.model.*
@@ -21,7 +22,6 @@ import org.http4s.multipart.{Boundary, Multipart, Part}
 import org.typelevel.ci.CIString
 import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.Slf4jFactory
-
 import java.net.http.HttpClient
 import java.net.{InetSocketAddress, ProxySelector}
 import java.time.{LocalDateTime, ZoneOffset}
@@ -48,6 +48,7 @@ object HttpHeader {
 object HttpClientProvider {
   private given LoggerFactory[IO]                   = Slf4jFactory.create[IO]
   private val logger: SelfAwareStructuredLogger[IO] = LoggerFactory[IO].getLogger
+  type HashKey = Option[String]
 
   def httpClientsResource(proxy: Option[ProxyUriPort], name: Option[String] = None)(implicit
     propertiesSmartClient4s: PropertiesSmartClient4s
@@ -257,6 +258,7 @@ case class Http4sClient(
     }
     shaRequest
   }
+
   def invalidate(
     uri: UriAndOpt,
     method: org.http4s.Method,
@@ -268,6 +270,11 @@ case class Http4sClient(
       val sha = shaCode(uri, method, body, cookies, multipart)
       logger.debug(s"invalidate cache $sha") *> cache1.delete(sha)(using None)
     case _ => IO(())
+  }
+
+  def invalidate(sha: String)(implicit feContext: Option[FEcontext]): IO[Unit] = cache match {
+    case Some(cache1) => logger.debug(s"invalidate cache sha: $sha") *> cache1.delete(sha)(using None)
+    case _            => logger.debug(s"cache not found on invalidate sha: $sha") *> IO(())
   }
 
   // typeclass to trasform input/output
@@ -302,14 +309,16 @@ case class Http4sClient(
       def contentType: `Content-Type`                  = applicationJsonCT
       def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
         feContext: Option[FEcontext]
-      ): IO[(Json, Status, Boolean)] = toJson(payload, status, fromCache, uri)
+      ) = toJson(payload, status, fromCache, uri)
     }
 
     // Json -> Unit
     given CallCodec[Json, Unit] with {
       def encodeBody(in: Option[Json]): Option[String] = in.map(_.spaces2)
       def contentType: `Content-Type`                  = applicationJsonCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
+      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
+        feContext: Option[FEcontext]
+      ) =
         IO(((), status, fromCache))
     }
     // Json -> String
@@ -331,26 +340,23 @@ case class Http4sClient(
     given CallCodec[String, Json] with {
       def encodeBody(in: Option[String]): Option[String] = in
       def contentType: `Content-Type`                    = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
-        feContext: Option[FEcontext]
-      ): IO[(Json, Status, Boolean)] = toJson(payload, status, fromCache, uri)
+      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
+        toJson(payload, status, fromCache, uri)
     }
 
     // String -> Unit
     given CallCodec[String, Unit] with {
       def encodeBody(in: Option[String]): Option[String] = in
       def contentType: `Content-Type`                    = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
-        feContext: Option[FEcontext]
-      ): IO[(Unit, Status, Boolean)] = IO(((), status, fromCache))
+      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) = IO(
+        ((), status, fromCache)
+      )
     }
     // Unit -> Json
     given CallCodec[Unit, Json] with {
       def encodeBody(in: Option[Unit]): Option[String] = None
       def contentType: `Content-Type`                  = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
-        feContext: Option[FEcontext]
-      ): IO[(Json, Status, Boolean)] =
+      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
         toJson(payload, status, fromCache, uri)
     }
 
@@ -365,8 +371,9 @@ case class Http4sClient(
     given CallCodec[Unit, String] with {
       def encodeBody(in: Option[Unit]): Option[String] = None
       def contentType: `Content-Type`                  = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
-        IO((payload, status, fromCache))
+      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) = IO(
+        (payload, status, fromCache)
+      )
     }
   }
 
@@ -383,21 +390,48 @@ case class Http4sClient(
     retry: Retry,
     feContext: Option[FEcontext] = None,
     codec: CallCodec[In, Out]
-  ): IO[(Out, Status, Boolean)] = {
+  ): IO[(Out, Status, Boolean)] = callWithInfo(
+    uri,
+    method,
+    body,
+    cookies,
+    multipart,
+    ttlCache,
+    timeout,
+    noLog
+  ).map((a, b, c, _, _) => (a, b, c))
+
+  def callWithInfo[In, Out](
+    uri: UriAndOpt,
+    method: org.http4s.Method,
+    body: Option[In] = None,
+    cookies: Option[RequestCookie] = None,
+    multipart: Option[String] = None,
+    ttlCache: Option[FiniteDuration] = None,
+    timeout: FiniteDuration = propertiesSmartClient4s.httpClientConf.timeout,
+    noLog: Boolean = false
+  )(implicit
+    retry: Retry,
+    feContext: Option[FEcontext] = None,
+    codec: CallCodec[In, Out]
+  ): IO[(Out, Status, Boolean, HashKey, FiniteDuration)] = {
     val body1 = codec.encodeBody(body)
     val ct    = codec.contentType
     val res = cache match {
       case Some(cache1) if ttlCache.isDefined =>
         for {
           _ <- IO(())
-          hash = shaCode(uri, method, body1, cookies, multipart)
-          fromCache <- cache1.get(hash)
+          sha = shaCode(uri, method, body1, cookies, multipart)
+          (time1, fromCache) <- cache1.get(sha).timed
           res <- fromCache match {
-            case Some(value) => logger.debug(s"probe cache: FOUND uri: ${uri.uri}  hash: $hash") *> IO((value._1, value._2, true))
+            case Some((payload, status)) =>
+              logger.debug(s"probe cache: FOUND uri: ${uri.uri} time: $time1 sha: $sha") *> IO(
+                (payload, status, true, Some(sha), time1)
+              )
             case None =>
               for {
-                _ <- logger.debug(s"probe cache: NOT FOUND uri: ${uri.uri} hash: $hash")
-                (payload, status) <- callNoCache(
+                _ <- logger.debug(s"probe cache: NOT FOUND uri: ${uri.uri} sha: $sha")
+                (payload, status, time2) <- callNoCache(
                   uri,
                   method,
                   body1,
@@ -407,10 +441,10 @@ case class Http4sClient(
                   ct
                 )
                 _ <- ttlCache match {
-                  case Some(ttl) if uri.oks.contains(status) => cache1.upSert(hash, (payload, status), ttl)
+                  case Some(ttl) if uri.oks.contains(status) => cache1.upSert(sha, (payload, status), ttl)
                   case _                                     => IO(())
                 }
-              } yield (payload, status, false)
+              } yield (payload, status, false, Some(sha), time2)
           }
         } yield res
       case _ =>
@@ -423,13 +457,14 @@ case class Http4sClient(
             multipart,
             timeout,
             ct
-          ).map(a => (a._1, a._2, false))
+          ).map(a => (a._1, a._2, false, None, a._3))
         } yield res
     }
 
-    res.flatMap { res1 =>
-      (if (noLog) IO.unit else sendChildLog(uri, method, body1, res1)) *>
-        codec.decodeResponse(res1._1, res1._2, res1._3, uri)
+    res.flatMap { x =>
+      val (payload, status, fromCache, sha, time3) = x
+      (if (noLog) IO.unit else sendChildLog(uri, method, body1, (payload, status, fromCache))) *>
+        codec.decodeResponse(payload, status, fromCache, uri).map((a, b, c) => (a, b, c, sha, time3))
     }
   }
 
@@ -441,7 +476,7 @@ case class Http4sClient(
     multipart: Option[String],
     timeout: FiniteDuration,
     ct: `Content-Type`
-  )(implicit retry: Retry, feContext: Option[FEcontext]): IO[(String, Status)] = {
+  )(implicit retry: Retry, feContext: Option[FEcontext]): IO[(String, Status, FiniteDuration)] = {
     val headers = uri.headerFields.map(b => Headers(b.map(a => Header.Raw(a.name, a.value))))
     def addBodyMultipart(name: String)(req: Request[IO]): Request[IO] =
       body match {
@@ -499,14 +534,14 @@ case class Http4sClient(
     retry
       .retry {
         for {
-          _   <- logger.debug(s"call with $retry ($method) $uri headers: (${doRequest.headers.headers.mkString(",")})...")
-          res <- client.run(doRequest).use(r => r.as[String].map(i => (i, r.status))).timeout(timeout)
-          _   <- logger.debug(s"call ($method) $uri ok")
-        } yield res
+          _                         <- logger.debug(s"call with $retry ($method) $uri headers: (${doRequest.headers.headers.mkString(",")})...")
+          (time, (payload, status)) <- client.run(doRequest).use(r => r.as[String].map(i => (i, r.status))).timeout(timeout).timed
+          _                         <- logger.debug(s"call ($method) $uri ok")
+        } yield (payload, status, time)
       }
       .handleErrorWith { e =>
         val x = s"${uri.uri}: ${e.toString}"
-        logger.error(s"$name call ($method) ${uri.uri} body: $body ko ${e.toString}") *> IO((x, InternalServerError))
+        logger.error(s"$name call ($method) ${uri.uri} body: $body ko ${e.toString}") *> IO((x, InternalServerError, FiniteDuration(0, SECONDS)))
       }
   }
 }
