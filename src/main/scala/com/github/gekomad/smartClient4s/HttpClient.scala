@@ -196,8 +196,8 @@ case class Http4sClient(
     info: Option[String]
   ): IO[Option[Status]] = propertiesSmartClient4s.logConf match {
     case None => IO(None)
-    case Some(LogConf(kafkaLogUri, domain, _, maxPayloadSize)) =>
-      given Retry             = Retry(2, 1.second)
+    case Some(LogConf(kafkaLogUri, domain, timeout, maxPayloadSize)) =>
+      given Retry             = Retry(3, 2.second)
       given Option[FEcontext] = Some(feContext)
 
       def truncatePayload(p: String): String = if (p.length > maxPayloadSize) s"${p.take(maxPayloadSize)}...truncated" else p
@@ -224,17 +224,17 @@ case class Http4sClient(
 
       logClient.map { x =>
         for {
-          aa <- x.callNoCache(
+          t <- x.callNoCache(
             kafkaLogUri,
             POST,
             Some(httpCall.asJson.spaces2),
             None,
             None,
-            timeout = propertiesSmartClient4s.httpClientConf.handShakeTimeout,
+            timeout = timeout,
             applicationJsonCT
           )
-          _ <- logger.debug(s"sendToLog $aa")
-        } yield aa._2
+          _ <- logger.debug(s"sendToLog (${t._1},${t._2},${t._3.toMillis}ms)")
+        } yield t._2
       }.sequence
 
   }
@@ -298,7 +298,7 @@ case class Http4sClient(
         io.circe.parser.parse(payload) match {
           case Left(_) =>
             val st = if (status.isSuccess) InternalServerError else status
-            logger.error(s"decode Json error: $payload") *>
+            logger.error(s"uri: $uri decode Json error: $payload") *>
               IO((PayloadError(uri = uri.uri.toString, description = payload).asJson, st, fromCache))
           case Right(v) => IO((v, status, fromCache))
         }

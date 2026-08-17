@@ -21,7 +21,7 @@ val statusOK: List[Status] = List(
 )
 
 case class ProxyUriPort(uri: Uri, port: Port, user: Option[String], pass: Option[String])
-case class LogConf(kafkaLogUri: UriAndOpt, domain: String, sendToLogTimeout: FiniteDuration = 7.seconds, maxPayloadSize: Int = 200 * 1024)
+case class LogConf(kafkaLogUri: UriAndOpt, domain: String, sendToLogTimeout: FiniteDuration = 15.seconds, maxPayloadSize: Int = 200 * 1024)
 case class HttpClientConf(timeout: FiniteDuration, handShakeTimeout: FiniteDuration = 5.seconds)
 case class CacheConf(maxSize: Option[Long], defaultTTL: FiniteDuration = FiniteDuration(Long.MaxValue, NANOSECONDS))
 case class BasicToken(value: String)
