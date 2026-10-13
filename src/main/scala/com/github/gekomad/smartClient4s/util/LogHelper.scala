@@ -11,7 +11,7 @@ import cats.effect.IO
 import com.github.gekomad.smartClient4s.model.{FEcontext, Line}
 
 def extractFEcontextFromHeader(req: Request[IO]): FEcontext = {
-  val user: String    = req.headers.get(ci"X-vega-user").map(_.head.value).getOrElse("unknown") // TODO rename vega
+  val user: String    = req.headers.get(ci"X-vega-user").map(_.head.value).getOrElse("unknown")
   val session: String = req.headers.get(ci"X-vega-session").map(_.head.value).getOrElse(f"#${scala.util.Random.nextInt(0xffffff + 1)}%06x")
   val useLog: Boolean = req.headers.get(ci"X-vega-useLog").map(_.head.value).getOrElse("true").toBoolean
   val (idParent, forceSendParent) = {

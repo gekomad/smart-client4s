@@ -13,102 +13,95 @@ class CaffeineTest extends CatsEffectSuite {
   private given PropertiesSmartClient4s = PropertiesSmartClient4sIT
 
   test("CatsCaffeine invalidate") {
-
-    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 1.hour)
-    for {
-      _ <- cache.upSert(1, "foo")
-      a <- cache.get(1)
-      _ = assert(a.contains("foo"))
-      _ <- cache.invalidate
-      a <- cache.get(1)
-      _ = assert(a.isEmpty)
-    } yield ()
+    CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 1.hour).map { cache =>
+      for {
+        _ <- cache.upSert(1, "foo")
+        a <- cache.get(1)
+        _ = assert(a.contains("foo"))
+        _ <- cache.invalidate
+        a <- cache.get(1)
+      } yield assert(a.isEmpty)
+    }.sequence
   }
   test("CatsCaffeine delete") {
-    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 1.hour)
-    for {
-      _ <- cache.upSert(1, "foo")
-      a <- cache.get(1)
-      _ = assert(a.contains("foo"))
-      _ <- cache.delete(1)
-      a <- cache.get(1)
-      _ = assert(a.isEmpty)
-    } yield ()
+    CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 1.hour).map { cache =>
+      for {
+        _ <- cache.upSert(1, "foo")
+        a <- cache.get(1)
+        _ = assert(a.contains("foo"))
+        _ <- cache.delete(1)
+        a <- cache.get(1)
+      } yield assert(a.isEmpty)
+    }.sequence
   }
 
   test("CatsCaffeine test1") {
-    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 400.millis)
-
-    for {
-      _ <- cache.upSert(1, "baz")
-      _ <- cache.upSert(1, "foo", 5.seconds)
-      a <- cache.get(1)
-      _ = assert(a.contains("foo"))
-      _ <- IO.sleep(1.seconds)
-      b <- cache.get(1)
-      _ = assert(b.contains("foo"))
-    } yield ()
+    CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 400.millis).map { cache =>
+      for {
+        _ <- cache.upSert(1, "baz")
+        _ <- cache.upSert(1, "foo", 5.seconds)
+        a <- cache.get(1)
+        _ = assert(a.contains("foo"))
+        _ <- IO.sleep(1.seconds)
+        b <- cache.get(1)
+      } yield assert(b.contains("foo"))
+    }.sequence
   }
 
   test("CatsCaffeine test") {
-    val cache = CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 400.millis)
-
-    for {
-      _ <- cache.upSert(1, "baz")
-      _ <- cache.upSert(1, "foo")
-      a <- cache.get(1)
-      _ = assert(a.contains("foo"))
-      _ <- IO.sleep(1.seconds)
-      b <- cache.get(1)
-      _ = assert(b.isEmpty)
-    } yield ()
+    CatsCaffeine[Int, String](maximumSize = None, defaultTTL = 400.millis).map { cache =>
+      for {
+        _ <- cache.upSert(1, "baz")
+        _ <- cache.upSert(1, "foo")
+        a <- cache.get(1)
+        _ = assert(a.contains("foo"))
+        _ <- IO.sleep(1.seconds)
+        b <- cache.get(1)
+      } yield assert(b.isEmpty)
+    }.sequence
   }
 
   test("CatsCaffeine test Map") {
-    val cache = CatsCaffeine[Int, String]()
-    for {
-      _ <- cache.upSert(Map(1 -> "baz", 2 -> "foo"))
-      a <- cache.get(1)
-      _ = assert(a.contains("baz"))
-      a <- cache.get(2)
-      _ = assert(a.contains("foo"))
-      _    <- cache.delete(List(1, 2)) // Iterable type
-      size <- cache.estimatedSize
-      _ = assert(size == 0)
-    } yield ()
+    CatsCaffeine[Int, String]().map { cache =>
+      for {
+        _ <- cache.upSert(Map(1 -> "baz", 2 -> "foo"))
+        a <- cache.get(1)
+        _ = assert(a.contains("baz"))
+        a <- cache.get(2)
+        _ = assert(a.contains("foo"))
+        _    <- cache.delete(List(1, 2)) // Iterable type
+        size <- cache.estimatedSize
+      } yield assert(size == 0)
+    }.sequence
   }
 
   test("CatsCaffeine test GC") {
-    val cache = CatsCaffeine[String, List[Int]](maximumSize = None, defaultTTL = 800.millis)
-
-    for {
-      _  <- cache.upSert("a", List(1))
-      _  <- cache.append("a", List(2, 3))
-      s1 <- cache.estimatedSize
-      _ = assert(s1 == 1)
-      a <- cache.get("a")
-      _ = assert(a.contains(List(1, 2, 3)))
-      _  <- IO.sleep(1.seconds)
-      _  <- cache.clean
-      s2 <- cache.estimatedSize
-      _ = assert(s2 == 0)
-    } yield ()
-
+    CatsCaffeine[String, List[Int]](maximumSize = None, defaultTTL = 800.millis).map { cache =>
+      for {
+        _  <- cache.upSert("a", List(1))
+        _  <- cache.append("a", List(2, 3))
+        s1 <- cache.estimatedSize
+        _ = assert(s1 == 1)
+        a <- cache.get("a")
+        _ = assert(a.contains(List(1, 2, 3)))
+        _  <- IO.sleep(1.seconds)
+        _  <- cache.clean
+        s2 <- cache.estimatedSize
+      } yield assert(s2 == 0)
+    }.sequence
   }
 
   test("CatsCaffeine test max size") {
-    val cache = CatsCaffeine[Int, String](maximumSize = Some(1))
-
-    for {
-      _  <- cache.upSert(1, "foo")
-      s1 <- cache.estimatedSize
-      _ = assert(s1 == 1)
-      _  <- cache.upSert(2, "bar")
-      _  <- IO.sleep(1.seconds)
-      s2 <- cache.estimatedSize
-      _ = assert(s2 == 1)
-    } yield ()
-
+    CatsCaffeine[Int, String](maximumSize = Some(1)).map { cache =>
+      for {
+        _  <- cache.upSert(1, "foo")
+        s1 <- cache.estimatedSize
+        _ = assert(s1 == 1)
+        _  <- cache.upSert(2, "bar")
+        _  <- IO.sleep(1.seconds)
+        s2 <- cache.estimatedSize
+      } yield assert(s2 == 1)
+    }.sequence
   }
 
 }

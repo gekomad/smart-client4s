@@ -4,30 +4,25 @@ import cats.effect.*
 import cats.implicits.*
 import com.github.gekomad.smartClient4s.HttpClientProvider.HashKey
 import com.github.gekomad.smartClient4s.HttpHeader.{CIcontentType, applicationJsonCT, textPlainCT}
-import com.github.gekomad.smartClient4s.cache.caffeine.{CatsCaffeine, CatsCaffeineTrait}
+import com.github.gekomad.smartClient4s.cache.CacheTrait
 import com.github.gekomad.smartClient4s.model.*
 import com.github.gekomad.smartClient4s.util.*
+import com.github.gekomad.smartClient4s.util.DecoderCirce.given
 import com.github.gekomad.smartClient4s.util.LogHelper.sourceInfo
+import io.circe.Encoder
 import io.circe.generic.auto.*
 import io.circe.syntax.*
-import io.circe.Encoder
 import org.http4s.*
 import org.http4s.Method.*
 import org.http4s.Status.{InternalServerError, Ok}
 import org.http4s.client.Client
 import org.http4s.client.dsl.io.*
 import org.http4s.headers.`Content-Type`
-import org.http4s.jdkhttpclient.JdkHttpClient
 import org.http4s.multipart.{Boundary, Multipart, Part}
 import org.typelevel.ci.CIString
-import org.typelevel.log4cats.*
-import org.typelevel.log4cats.slf4j.Slf4jFactory
-import java.net.http.HttpClient
-import java.net.{InetSocketAddress, ProxySelector}
 import java.time.{LocalDateTime, ZoneOffset}
 import java.util.UUID
 import scala.concurrent.duration.*
-import com.github.gekomad.smartClient4s.util.DecoderCirce.given
 
 object HttpHeader {
   val CIcontentType                                      = CIString("Content-Type")
@@ -45,60 +40,17 @@ object HttpHeader {
   val textXmlCT: `Content-Type`                          = `Content-Type`(MediaType.text.xml)
 }
 
-object HttpClientProvider {
-  private given LoggerFactory[IO]                   = Slf4jFactory.create[IO]
-  private val logger: SelfAwareStructuredLogger[IO] = LoggerFactory[IO].getLogger
-  type HashKey = Option[String]
-
-  def httpClientsResource(proxy: Option[ProxyUriPort], name: Option[String] = None)(implicit
-    propertiesSmartClient4s: PropertiesSmartClient4s
-  ): IO[Http4sClient] = {
-    val c = httpClients(None).flatMap { httpClientLog =>
-      httpClients(proxy).map { httpClient =>
-        val logClient = Http4sClient(name = name.map(a => s"$a-logClient"), client = httpClientLog, logClient = None)
-        Http4sClient(name, httpClient, Some(logClient))
-      }
-    }
-    logger.debug("httpClientsResource") *> c
-  }
-
-  private def httpClients(useProxy: Option[ProxyUriPort])(implicit propertiesSmartClient4s: PropertiesSmartClient4s): IO[Client[IO]] = {
-    import scala.jdk.DurationConverters.*
-    val baseClient = HttpClient
-      .newBuilder()
-      .version(HttpClient.Version.HTTP_2)
-      .connectTimeout(propertiesSmartClient4s.httpClientConf.handShakeTimeout.toJava)
-
-    val cl = useProxy match {
-      case Some(ProxyUriPort(host, port, proxyUser, proxyPass)) =>
-        val c = baseClient.proxy(ProxySelector.of(new InetSocketAddress(host.toString, port.value)))
-        proxyUser match {
-          case Some(user) =>
-            val pass = proxyPass.filter(_.nonEmpty).fold(Array.emptyCharArray)(_.toCharArray)
-            c.authenticator(new java.net.Authenticator {
-              override def getPasswordAuthentication: java.net.PasswordAuthentication =
-                new java.net.PasswordAuthentication(user, pass)
-            })
-          case None => c
-        }
-      case None => baseClient
-    }
-    IO(JdkHttpClient[IO](cl.build()))
-  }
-}
-
 case class PayloadError(uri: String, error: String = "Payload is not a Json", description: String)
 case class Http4sClient(
-  name: Option[String],
-  client: Client[IO],
-  private val logClient: Option[Http4sClient]
+  private val name: Option[String],
+  private val client: Client[IO],
+  private val logClient: Option[Http4sClient],
+  private val cache: Option[CacheTrait[String, (String, Status)]]
 )(implicit propertiesSmartClient4s: PropertiesSmartClient4s) {
 
   val starting: LocalDateTime            = LocalDateTime.now()
   private implicit val logger: PloggerIO = PloggerIO(this.getClass)
 
-  val cache: Option[CatsCaffeineTrait[String, (String, Status)]] =
-    propertiesSmartClient4s.cacheConf.map(cache => CatsCaffeine[String, (String, Status)](name, cache.defaultTTL, cache.maxSize))
   def statistics: IO[(Option[String], Long)] = cache.map(_.estimatedSize).sequence.map(a => (name, a.getOrElse(0)))
   def estimatedSize: IO[Option[Long]]        = cache.map(_.estimatedSize).sequence
   def invalidateCache: IO[Option[Unit]]      = cache.map(_.invalidate).sequence
