@@ -10,7 +10,7 @@ import com.github.gekomad.smartClient4s.util.*
 import com.github.gekomad.smartClient4s.util.LogHelper.sourceInfo
 import io.circe.generic.auto.*
 import io.circe.syntax.*
-import io.circe.{Encoder, Json}
+import io.circe.Encoder
 import org.http4s.*
 import org.http4s.Method.*
 import org.http4s.Status.{InternalServerError, Ok}
@@ -277,106 +277,6 @@ case class Http4sClient(
     case _            => logger.debug(s"cache not found on invalidate sha: $sha") *> IO(())
   }
 
-  // typeclass to trasform input/output
-  trait CallCodec[In, Out] {
-    def encodeBody(in: Option[In]): Option[String]
-    def contentType: `Content-Type`
-    def decodeResponse(
-      payload: String,
-      status: Status,
-      fromCache: Boolean,
-      uri: UriAndOpt
-    )(implicit feContext: Option[FEcontext]): IO[(Out, Status, Boolean)]
-  }
-
-  object CallCodec {
-    private def toJson(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
-      feContext: Option[FEcontext]
-    ): IO[(Json, Status, Boolean)] = {
-      if (payload.isBlank) IO((Json.Null, status, fromCache))
-      else
-        io.circe.parser.parse(payload) match {
-          case Left(_) =>
-            val st = if (status.isSuccess) InternalServerError else status
-            logger.error(s"uri: $uri decode Json error: $payload") *>
-              IO((PayloadError(uri = uri.uri.toString, description = payload).asJson, st, fromCache))
-          case Right(v) => IO((v, status, fromCache))
-        }
-    }
-    // Json -> Json
-    given CallCodec[Json, Json] with {
-      def encodeBody(in: Option[Json]): Option[String] = in.map(_.spaces2)
-      def contentType: `Content-Type`                  = applicationJsonCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
-        feContext: Option[FEcontext]
-      ) = toJson(payload, status, fromCache, uri)
-    }
-
-    // Json -> Unit
-    given CallCodec[Json, Unit] with {
-      def encodeBody(in: Option[Json]): Option[String] = in.map(_.spaces2)
-      def contentType: `Content-Type`                  = applicationJsonCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit
-        feContext: Option[FEcontext]
-      ) =
-        IO(((), status, fromCache))
-    }
-    // Json -> String
-    given CallCodec[Json, String] with {
-      def encodeBody(in: Option[Json]): Option[String] = in.map(_.spaces2)
-      def contentType: `Content-Type`                  = applicationJsonCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
-        IO((payload, status, fromCache))
-    }
-    // String -> String
-    given CallCodec[String, String] with {
-      def encodeBody(in: Option[String]): Option[String] = in
-      def contentType: `Content-Type`                    = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
-        IO((payload, status, fromCache))
-    }
-
-    // String -> Json
-    given CallCodec[String, Json] with {
-      def encodeBody(in: Option[String]): Option[String] = in
-      def contentType: `Content-Type`                    = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
-        toJson(payload, status, fromCache, uri)
-    }
-
-    // String -> Unit
-    given CallCodec[String, Unit] with {
-      def encodeBody(in: Option[String]): Option[String] = in
-      def contentType: `Content-Type`                    = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) = IO(
-        ((), status, fromCache)
-      )
-    }
-    // Unit -> Json
-    given CallCodec[Unit, Json] with {
-      def encodeBody(in: Option[Unit]): Option[String] = None
-      def contentType: `Content-Type`                  = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
-        toJson(payload, status, fromCache, uri)
-    }
-
-    // Unit -> Unit
-    given CallCodec[Unit, Unit] with {
-      def encodeBody(in: Option[Unit]): Option[String] = None
-      def contentType: `Content-Type`                  = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) =
-        IO(((), status, fromCache))
-    }
-    // Unit -> String
-    given CallCodec[Unit, String] with {
-      def encodeBody(in: Option[Unit]): Option[String] = None
-      def contentType: `Content-Type`                  = textPlainCT
-      def decodeResponse(payload: String, status: Status, fromCache: Boolean, uri: UriAndOpt)(implicit feContext: Option[FEcontext]) = IO(
-        (payload, status, fromCache)
-      )
-    }
-  }
-
   def call[In, Out](
     uri: UriAndOpt,
     method: org.http4s.Method,
@@ -476,7 +376,30 @@ case class Http4sClient(
     multipart: Option[String],
     timeout: FiniteDuration,
     ct: `Content-Type`
-  )(implicit retry: Retry, feContext: Option[FEcontext]): IO[(String, Status, FiniteDuration)] = {
+  )(implicit retry: Retry, feContext: Option[FEcontext]): IO[(String, Status, FiniteDuration)] = retry
+    .retry {
+      for {
+        _ <- logger.debug(s"call with $retry ($method) $uri...")
+        (time, (payload, status)) <- resource(uri, method, body, cookies, multipart, ct)
+          .use(r => r.as[String].map(i => (i, r.status)))
+          .timeout(timeout)
+          .timed
+        _ <- logger.debug(s"call ($method) $uri ok")
+      } yield (payload, status, time)
+    }
+    .handleErrorWith { e =>
+      val x = s"${uri.uri}: ${e.toString}"
+      logger.error(s"$name call ($method) ${uri.uri} body: $body ko ${e.toString}") *> IO((x, InternalServerError, FiniteDuration(0, SECONDS)))
+    }
+
+  def resource(
+    uri: UriAndOpt,
+    method: org.http4s.Method,
+    body: Option[String] = None,
+    cookies: Option[RequestCookie] = None,
+    multipart: Option[String] = None,
+    ct: `Content-Type` = textPlainCT
+  ): Resource[IO, Response[IO]] = {
     val headers = uri.headerFields.map(b => Headers(b.map(a => Header.Raw(a.name, a.value))))
     def addBodyMultipart(name: String)(req: Request[IO]): Request[IO] =
       body match {
@@ -531,17 +454,6 @@ case class Http4sClient(
       case _       => throw new NotImplementedError(s"no method found: $method")
     }
 
-    retry
-      .retry {
-        for {
-          _                         <- logger.debug(s"call with $retry ($method) $uri headers: (${doRequest.headers.headers.mkString(",")})...")
-          (time, (payload, status)) <- client.run(doRequest).use(r => r.as[String].map(i => (i, r.status))).timeout(timeout).timed
-          _                         <- logger.debug(s"call ($method) $uri ok")
-        } yield (payload, status, time)
-      }
-      .handleErrorWith { e =>
-        val x = s"${uri.uri}: ${e.toString}"
-        logger.error(s"$name call ($method) ${uri.uri} body: $body ko ${e.toString}") *> IO((x, InternalServerError, FiniteDuration(0, SECONDS)))
-      }
+    client.run(doRequest)
   }
 }

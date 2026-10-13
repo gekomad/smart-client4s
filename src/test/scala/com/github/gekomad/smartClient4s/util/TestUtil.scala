@@ -6,7 +6,7 @@ import scala.concurrent.duration.DurationInt
 
 object TestUtil {
 
-  case class MyData(name: String, age: Int)
+  case class TestMyData(name: String, age: Int)
 
   val PropertiesSmartClient4sIT = PropertiesSmartClient4s(
     httpClientConf = HttpClientConf(timeout = 20.seconds),

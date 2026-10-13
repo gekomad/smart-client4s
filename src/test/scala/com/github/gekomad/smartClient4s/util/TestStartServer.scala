@@ -3,7 +3,7 @@ package com.github.gekomad.smartClient4s.util
 import cats.effect.*
 import cats.effect.unsafe.implicits.global
 import com.comcast.ip4s.{Port, host, port}
-import com.github.gekomad.smartClient4s.util.TestUtil.MyData
+import com.github.gekomad.smartClient4s.util.TestUtil.TestMyData
 import io.circe.Json
 import io.circe.generic.auto
 import io.circe.generic.auto.*
@@ -23,13 +23,21 @@ object TestStartServer {
 
   private def adminRoutes: AuthedRoutes[BasicAuthUser, IO] = {
     AuthedRoutes.of {
+      case GET -> Root / "api" / "csv" as _ =>
+        val csv =
+          """1,aaa
+            |4,bbb
+            |1,ccc""".stripMargin
+        Ok(csv)
+      case GET -> Root / "api" / "my_class" as _ =>
+        Ok(TestMyData("Bob", 12).asJson)
       case GET -> Root / "api" / "delay" / i as _ =>
         Thread.sleep(i.toInt * 1000)
         Ok()
       case req @ POST -> Root / "api" / "get_long_service" as _ =>
         req.req.as[Json].flatMap { _ =>
           Thread.sleep(2000)
-          Ok(MyData("Maria", 44).asJson)
+          Ok(TestMyData("Maria", 44).asJson)
         }
     }
   }

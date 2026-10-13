@@ -2,7 +2,7 @@ package com.github.gekomad.smartClient4s
 
 import cats.effect.IO
 import com.github.gekomad.smartClient4s.model.PropertiesSmartClient4s
-import com.github.gekomad.smartClient4s.util.TestUtil.{MyData, PropertiesSmartClient4sIT}
+import com.github.gekomad.smartClient4s.util.TestUtil.{TestMyData, PropertiesSmartClient4sIT}
 import com.github.gekomad.smartClient4s.util.{Retry, TestHelper, TestStartServer}
 import io.circe.Json
 import io.circe.generic.auto.*
@@ -31,7 +31,7 @@ class InvalidateTest extends CatsEffectSuite {
             body = Some(TestHelper.fetchDataPayload("key_cached")),
             ttlCache = Some(2.hours)
           )
-        _ = assert(payload.as[MyData].isRight)
+        _ = assert(payload.as[TestMyData].isRight)
         _ = assert(status.isSuccess)
         _ = assert(sha1.isDefined)
         _ = assert(!fromCache)
@@ -44,7 +44,7 @@ class InvalidateTest extends CatsEffectSuite {
             ttlCache = Some(2.hours)
           )
 
-        _ = assert(payload.as[MyData].isRight)
+        _ = assert(payload.as[TestMyData].isRight)
         _ = assert(status.isSuccess)
         _ = assert(fromCache)
         _ = assert(sha1 == sha2)
@@ -61,7 +61,7 @@ class InvalidateTest extends CatsEffectSuite {
             ttlCache = Some(2.hours)
           )
 
-        _ = assert(payload.as[MyData].isRight)
+        _ = assert(payload.as[TestMyData].isRight)
         _ = assert(status.isSuccess)
         _ = assert(!fromCache)
         _ = assert(sha1 == sha3)

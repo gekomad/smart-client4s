@@ -34,7 +34,7 @@ private class CatsCaffeineEnable[@specialized(Int, Long) K, @specialized(Int, Lo
   private val cache: Cache[K, ElementWithTTL[V]]
 ) extends CatsCaffeineTrait[K, V] {
   private implicit val logger: PloggerIO = PloggerIO(this.getClass)
-  override val cacheName                 = name
+  override val cacheName: Option[String] = name
   override def append[A](key: K, values: List[A], ttl: Option[FiniteDuration] = None)(using
     ev: V <:< List[A]
   )(implicit feContext: Option[FEcontext]): IO[Unit] =
