@@ -42,7 +42,7 @@ object HttpHeader {
 
 case class PayloadError(uri: String, error: String = "Payload is not a Json", description: String)
 case class Http4sClient(
-  private val name: Option[String],
+  val name: Option[String],
   private val client: Client[IO],
   private val logClient: Option[Http4sClient],
   private val cache: Option[CacheTrait[String, (String, Status)]]
@@ -87,7 +87,8 @@ case class Http4sClient(
       feContext = feCtx.copy(idParent = None),
       api = api,
       idx = idx,
-      info = info
+      info = info,
+      timeMills = None
     )
   }
 
@@ -104,7 +105,8 @@ case class Http4sClient(
       feCtx,
       api = None,
       idx = None,
-      info = Some(info)
+      info = Some(info),
+      timeMills = None
     )
   }
 
@@ -112,10 +114,11 @@ case class Http4sClient(
     uri: UriAndOpt,
     method: org.http4s.Method,
     body: Option[String],
-//    cookies: Option[RequestCookie],
-//    multipart: Option[String],
+    //    cookies: Option[RequestCookie],
+    //    multipart: Option[String],
     res: (String, Status, Boolean),
-    info: Option[String] = None
+    info: Option[String] = None,
+    timeMills: Option[Int]
   )(implicit feContext: Option[FEcontext]): IO[Option[Status]] = sendLogIfEnabled { feCtx =>
     sendToLog(
       idLog = UUID.randomUUID,
@@ -129,7 +132,8 @@ case class Http4sClient(
       feCtx,
       api = None,
       idx = None,
-      info = info
+      info = info,
+      timeMills
     )
   }
 
@@ -145,7 +149,8 @@ case class Http4sClient(
     feContext: FEcontext,
     api: Option[String],
     idx: Option[List[String]],
-    info: Option[String]
+    info: Option[String],
+    timeMills: Option[Int]
   ): IO[Option[Status]] = propertiesSmartClient4s.logConf match {
     case None => IO(None)
     case Some(LogConf(kafkaLogUri, domain, timeout, maxPayloadSize)) =>
@@ -171,7 +176,8 @@ case class Http4sClient(
         line = Some(sourceInfo),
         idx = idx.map(_.map(a => Some(a))),
         info = info,
-        fromCache = Some(res._3)
+        fromCache = Some(res._3),
+        timeMills
       )
 
       logClient.map { x =>
@@ -315,7 +321,8 @@ case class Http4sClient(
 
     res.flatMap { x =>
       val (payload, status, fromCache, sha, time3) = x
-      (if (noLog) IO.unit else sendChildLog(uri, method, body1, (payload, status, fromCache))) *>
+      (if (noLog) IO.unit
+       else sendChildLog(uri, method, body1, (payload, status, fromCache), info = None, timeMills = Some(time3.toMillis.toInt))) *>
         codec.decodeResponse(payload, status, fromCache, uri).map((a, b, c) => (a, b, c, sha, time3))
     }
   }

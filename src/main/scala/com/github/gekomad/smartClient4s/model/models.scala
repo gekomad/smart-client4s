@@ -88,5 +88,6 @@ case class HttpCall(
   line: Option[Line],
   idx: Option[List[Option[String]]],
   info: Option[String],
-  fromCache: Option[Boolean]
+  fromCache: Option[Boolean],
+  timeMills: Option[Int]
 )
