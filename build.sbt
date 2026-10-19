@@ -5,7 +5,7 @@ lazy val root = project
   .in(file("."))
   .settings(
     name              := "smart-client4s",
-    version           := "0.1.8",
+    version           := "0.1.9",
     scalaVersion      := "3.10.0",
     semanticdbEnabled := true,
     semanticdbVersion := scalafixSemanticdb.revision,
