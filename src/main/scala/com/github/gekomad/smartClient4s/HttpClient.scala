@@ -90,22 +90,22 @@ case class Http4sClient(
       info = info
     )
   }
-  def sendInfoLog(info: String)(implicit feContext: Option[FEcontext]): IO[Option[Status]] = logger.debug("sendInfoLog") *> sendLogIfEnabled {
-    feCtx =>
-      sendToLog(
-        idLog = UUID.randomUUID,
-        uri = None,
-        method = GET,
-        body = None,
-        direction = LogDirection.out,
-//        cookies = None,
-//        multipart = None,
-        res = None,
-        feContext = feCtx,
-        info = Some(info),
-        api = None,
-        idx = None
-      )
+
+  def sendInfoLog(info: String)(implicit feContext: Option[FEcontext]): IO[Option[Status]] = sendLogIfEnabled { feCtx =>
+    sendToLog(
+      idLog = UUID.randomUUID,
+      None,
+      org.http4s.Method.GET,
+      None,
+      direction = LogDirection.out,
+      //      cookies,
+      //      multipart,
+      res = Some(("", Ok, false)),
+      feCtx,
+      api = None,
+      idx = None,
+      info = Some(info)
+    )
   }
 
   def sendChildLog(
