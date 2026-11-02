@@ -14,12 +14,13 @@ import io.circe.generic.auto.*
 import io.circe.syntax.*
 import org.http4s.*
 import org.http4s.Method.*
-import org.http4s.Status.{InternalServerError, Ok}
+import org.http4s.Status.{InternalServerError, Ok, Processing}
 import org.http4s.client.Client
 import org.http4s.client.dsl.io.*
 import org.http4s.headers.`Content-Type`
 import org.http4s.multipart.{Boundary, Multipart, Part}
 import org.typelevel.ci.CIString
+
 import java.time.{LocalDateTime, ZoneOffset}
 import java.util.UUID
 import scala.concurrent.duration.*
@@ -357,8 +358,9 @@ case class Http4sClient(
     body: Option[String] = None,
     cookies: Option[RequestCookie] = None,
     multipart: Option[String] = None,
-    ct: `Content-Type` = textPlainCT
-  ): Resource[IO, Response[IO]] = {
+    ct: `Content-Type` = textPlainCT,
+    sendLog: Boolean = false
+  )(implicit feContext: Option[FEcontext]): Resource[IO, Response[IO]] = {
     val headers = uri.headerFields.map(b => Headers(b.map(a => Header.Raw(a.name, a.value))))
     def addBodyMultipart(name: String)(req: Request[IO]): Request[IO] =
       body match {
@@ -412,7 +414,11 @@ case class Http4sClient(
       case HEAD    => decorate(HEAD(uri.uri))
       case _       => throw new NotImplementedError(s"no method found: $method")
     }
+    val a: IO[Option[Status]] =
+      if (sendLog) sendChildLog(uri, method, body, ("Streaming....", Processing, false), info = None, timeMills = None) else IO(None)
 
-    client.run(doRequest)
+    val b: Resource[IO, Response[IO]] = client.run(doRequest)
+    Resource.eval(a).flatMap(_ => b)
+
   }
 }

@@ -5,8 +5,8 @@ lazy val root = project
   .in(file("."))
   .settings(
     name              := "smart-client4s",
-    version           := "0.2.0",
-    scalaVersion      := "3.10.0",
+    version           := "0.2.1",
+    scalaVersion      := "3.10.1",
     semanticdbEnabled := true,
     semanticdbVersion := scalafixSemanticdb.revision,
     scalafmtOnCompile := true,
@@ -20,7 +20,7 @@ lazy val root = project
       "com.github.cb372"             %% "cats-retry"             % "4.0.0",
       "org.typelevel"                %% "log4cats-slf4j"         % "2.8.0",
       "com.github.ben-manes.caffeine" % "caffeine"               % "3.3.1",
-      "ch.qos.logback"                % "logback-classic"        % "1.6.5",
+      "ch.qos.logback"                % "logback-classic"        % "1.6.7",
       "org.http4s"                   %% "http4s-ember-server"    % http4sVersion % Test,
       "org.typelevel"                %% "munit-cats-effect"      % "2.2.1"       % Test
     )

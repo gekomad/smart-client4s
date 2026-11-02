@@ -1,7 +1,7 @@
 package com.github.gekomad.smartClient4s
 
 import cats.effect.IO
-import com.github.gekomad.smartClient4s.model.{BasicToken, PropertiesSmartClient4s, UriAndOpt}
+import com.github.gekomad.smartClient4s.model.{BasicToken, FEcontext, PropertiesSmartClient4s, UriAndOpt}
 import com.github.gekomad.smartClient4s.util.TestStartServer
 import com.github.gekomad.smartClient4s.util.TestUtil.PropertiesSmartClient4sIT
 import munit.CatsEffectSuite
@@ -9,15 +9,16 @@ import org.http4s.Method.GET
 import org.http4s.implicits.uri
 import org.typelevel.log4cats.Logger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
+
 import scala.concurrent.duration.*
 
 class StreamTest extends CatsEffectSuite {
 
   override def beforeAll(): Unit = TestStartServer.startServer
 
-  implicit val logger: Logger[IO]       = Slf4jLogger.getLoggerFromName[IO]("test1")
-  private given PropertiesSmartClient4s = PropertiesSmartClient4sIT
-
+  implicit val logger: Logger[IO]           = Slf4jLogger.getLoggerFromName[IO]("test1")
+  private given PropertiesSmartClient4s     = PropertiesSmartClient4sIT
+  implicit val feContext: Option[FEcontext] = None
   test("stream test") {
     import fs2.text
     case class CSVrecord(field1: Int, field2: String)

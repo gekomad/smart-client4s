@@ -17,6 +17,10 @@ val statusOK: List[Status] = List(
   Status.IMUsed,
   Status.MultiStatus,
   Status.PartialContent,
+  Status.Processing,
+  Status.Continue,
+  Status.SwitchingProtocols,
+  Status.EarlyHints,
   Status.ResetContent
 )
 
