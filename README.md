@@ -1,6 +1,6 @@
 SmartClient4s
 =========
-Http4s client with cache and log
+Http4s client with proxy, cache and log
 ---
     Need JDK 11+
 
